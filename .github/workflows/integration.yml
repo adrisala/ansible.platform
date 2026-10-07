@@ -85,14 +85,121 @@ jobs:
             ./tools/controller-dev-env/setup.sh
         working-directory: ansible-platform
 
-      - name: Wait for envoy xDS refresh
-        run: sleep 65
-
       - name: Extract gateway password and set it as an environment variable
         run: |
           ADMIN_PW=$(awk '/gateway_admin_password/{print $2}' container-startup.yml | xargs echo) &&
             echo "GATEWAY_PASSWORD=$ADMIN_PW" >> $GITHUB_ENV
         working-directory: aap-gateway
+
+      - name: Wait for envoy xDS refresh
+        run: sleep 65
+
+      - name: Debug — container status
+        if: always()
+        run: |
+          echo "=== Running containers ==="
+          podman ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+          echo ""
+          echo "=== AWX controller health ==="
+          curl -sf http://localhost:8013/api/controller/v2/ping/ && echo "  Direct AWX: OK" || echo "  Direct AWX: FAILED"
+          echo ""
+          echo "=== Gateway health ==="
+          curl -sf -k https://localhost:8443/api/gateway/v1/ping/ && echo "  Gateway (8443): OK" || echo "  Gateway (8443): FAILED"
+          curl -sf -k https://localhost:8000/api/gateway/v1/ping/ && echo "  Gateway (8000): OK" || echo "  Gateway (8000): FAILED"
+
+      - name: Debug — envoy clusters
+        if: always()
+        run: |
+          echo "=== Envoy clusters ==="
+          curl -sf http://localhost:19000/clusters 2>/dev/null || echo "Envoy admin not reachable on 19000"
+          echo ""
+          echo "=== Grep for controller in clusters ==="
+          curl -sf http://localhost:19000/clusters 2>/dev/null | grep -i controller || echo "  No controller cluster found"
+
+      - name: Debug — envoy routes (config_dump)
+        if: always()
+        run: |
+          echo "=== Envoy route config (filtered for controller) ==="
+          curl -sf http://localhost:19000/config_dump 2>/dev/null | \
+            python3 -c "
+          import json, sys
+          try:
+              dump = json.load(sys.stdin)
+              for config in dump.get('configs', []):
+                  if '@type' in config and 'route' in config.get('@type', '').lower():
+                      print(json.dumps(config, indent=2))
+                  for entry in config.get('dynamic_route_configs', config.get('static_route_configs', [])):
+                      rc = entry.get('route_config', {})
+                      for vh in rc.get('virtual_hosts', []):
+                          for route in vh.get('routes', []):
+                              match = route.get('match', {})
+                              route_action = route.get('route', {})
+                              prefix = match.get('prefix', '')
+                              cluster = route_action.get('cluster', '')
+                              if 'controller' in prefix.lower() or 'controller' in cluster.lower():
+                                  print(f'MATCH: prefix={prefix} -> cluster={cluster}')
+              print('--- done scanning routes ---')
+          except Exception as e:
+              print(f'Error parsing config_dump: {e}')
+          " 2>&1 || echo "Could not parse envoy config"
+
+      - name: Debug — envoy listeners
+        if: always()
+        run: |
+          echo "=== Envoy listeners ==="
+          curl -sf http://localhost:19000/listeners 2>/dev/null || echo "Envoy admin not reachable"
+
+      - name: Debug — gateway services API
+        if: always()
+        run: |
+          echo "=== Registered services ==="
+          curl -sk -u admin:$GATEWAY_PASSWORD \
+            https://localhost:8443/api/gateway/v1/services/ 2>/dev/null | \
+            python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          for svc in data.get('results', []):
+              print(f\"  {svc.get('name','?'):20s} slug={svc.get('api_slug','?'):15s} port={svc.get('service_port','?')} https={svc.get('is_service_https','?')}\")
+          " 2>&1 || echo "Could not query services API"
+          echo ""
+          echo "=== Service nodes ==="
+          curl -sk -u admin:$GATEWAY_PASSWORD \
+            https://localhost:8443/api/gateway/v1/service_nodes/ 2>/dev/null | \
+            python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          for node in data.get('results', []):
+              print(f\"  {node.get('name','?'):20s} address={node.get('address','?'):25s} port={node.get('port','?')} service={node.get('service','?')}\")
+          " 2>&1 || echo "Could not query service_nodes API"
+          echo ""
+          echo "=== Service clusters ==="
+          curl -sk -u admin:$GATEWAY_PASSWORD \
+            https://localhost:8443/api/gateway/v1/service_clusters/ 2>/dev/null | \
+            python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          for cl in data.get('results', []):
+              print(f\"  {cl.get('name','?'):20s} id={cl.get('id','?')}\")
+          " 2>&1 || echo "Could not query service_clusters API"
+
+      - name: Debug — proxy routing test
+        if: always()
+        run: |
+          echo "=== Gateway -> Controller proxy test ==="
+          echo "--- via HAProxy (8443) ---"
+          curl -vsk -u admin:$GATEWAY_PASSWORD \
+            https://localhost:8443/api/controller/v2/ping/ 2>&1 | head -40
+          echo ""
+          echo "--- via gateway direct (8000) ---"
+          curl -vsk -u admin:$GATEWAY_PASSWORD \
+            https://localhost:8000/api/controller/v2/ping/ 2>&1 | head -40
+          echo ""
+          echo "--- via envoy (9080) ---"
+          curl -vs http://localhost:9080/api/controller/v2/ping/ 2>&1 | head -40
+
+      - name: Debug — AWX container logs (last 50 lines)
+        if: always()
+        run: podman logs --tail 50 awx_controller 2>&1 || echo "No AWX container logs"
 
       - name: Perform integration tests (${{ matrix.connection_mode }})
         env:
