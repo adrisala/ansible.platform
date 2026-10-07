@@ -91,8 +91,22 @@ jobs:
             echo "GATEWAY_PASSWORD=$ADMIN_PW" >> $GITHUB_ENV
         working-directory: aap-gateway
 
-      - name: Wait for envoy xDS refresh
-        run: sleep 65
+      - name: Wait for envoy to load listeners (xDS CDS+LDS sync)
+        run: |
+          echo "Polling envoy listeners (CDS must load before LDS can reference clusters)..."
+          for i in $(seq 1 40); do
+            LISTENERS=$(curl -sf http://localhost:19000/listeners 2>/dev/null)
+            if [[ -n "$LISTENERS" ]]; then
+              echo "Envoy listeners ready after $((i * 5))s:"
+              echo "$LISTENERS"
+              break
+            fi
+            echo "  attempt $i/40 — no listeners yet, waiting 5s..."
+            sleep 5
+          done
+          if [[ -z "$LISTENERS" ]]; then
+            echo "WARNING: envoy listeners never appeared after 200s"
+          fi
 
       - name: Debug — container status
         if: always()
