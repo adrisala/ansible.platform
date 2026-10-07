@@ -79,9 +79,14 @@ jobs:
         run: pip install -r tests/integration/requirements.txt ansible-core
         working-directory: ansible-platform
 
-      - name: Cleanup services
-        run: make cleanup-services
-        working-directory: aap-gateway
+      - name: Start controller service
+        run: |
+          AAP_GATEWAY_DIR=${{ github.workspace }}/aap-gateway \
+            ./tools/controller-dev-env/setup.sh
+        working-directory: ansible-platform
+
+      - name: Wait for envoy xDS refresh
+        run: sleep 65
 
       - name: Extract gateway password and set it as an environment variable
         run: |
@@ -98,6 +103,10 @@ jobs:
       - name: Dump the container logs on failure
         run: podman-compose -f tools/generated/compose.yml logs
         working-directory: aap-gateway
+        if: failure()
+
+      - name: Dump controller logs on failure
+        run: podman logs awx_controller 2>&1 || true
         if: failure()
 
   coverage_test:

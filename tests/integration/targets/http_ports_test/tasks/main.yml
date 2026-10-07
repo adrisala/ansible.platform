@@ -147,6 +147,24 @@
         that:
           - delete is changed
 
+    - name: Save existing API port info
+      ansible.builtin.set_fact:
+        existing_api_ports: "{{ lookup('ansible.platform.gateway_api', 'http_ports',
+          query_params={'is_api_port': 'true'}, **connection_info) }}"
+
+    - name: Temporarily unset is_api_port on existing port via manage command
+      ansible.builtin.shell: |
+        podman exec -i aap_gw_1 aap-gateway-manage shell -i python <<'PYEOF'
+        from aap_gateway_api.models import HTTPPort
+        p = HTTPPort.objects.filter(is_api_port=True).first()
+        p.is_api_port = False
+        p.save(update_fields=['is_api_port'])
+        print(p.id)
+        PYEOF
+      register: saved_api_port
+      delegate_to: localhost
+      when: existing_api_ports | length > 0
+
     - name: Add API http port
       ansible.platform.http_port:
         name: "Port 44301"
@@ -190,7 +208,25 @@
         - "http_port3"
         - "http_port4"
         # API port cannot be deleted via API, so we leave it.
-        # If this ever becomes a problem in the future, add a task here to
-        # delete it using manage.py.
         # - "http_port5"
+
+    - name: Remove test API port via manage command
+      ansible.builtin.shell: |
+        podman exec -i aap_gw_1 aap-gateway-manage shell -i python <<'PYEOF'
+        from aap_gateway_api.models import HTTPPort
+        HTTPPort.objects.filter(name='Port 44301').delete()
+        PYEOF
+      delegate_to: localhost
+      ignore_errors: true
+
+    - name: Restore original API port flag
+      ansible.builtin.shell: |
+        podman exec -i aap_gw_1 aap-gateway-manage shell -i python <<'PYEOF'
+        from aap_gateway_api.models import HTTPPort
+        p = HTTPPort.objects.get(id={{ saved_api_port.stdout_lines | last }})
+        p.is_api_port = True
+        p.save(update_fields=['is_api_port'])
+        PYEOF
+      delegate_to: localhost
+      when: saved_api_port is defined and saved_api_port is not skipped
 ...
