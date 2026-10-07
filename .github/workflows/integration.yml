@@ -152,9 +152,10 @@ jobs:
       - name: Debug — gateway services API
         if: always()
         run: |
+          GW="https://localhost:8000"
           echo "=== Registered services ==="
           curl -sk -u admin:$GATEWAY_PASSWORD \
-            https://localhost:8443/api/gateway/v1/services/ 2>/dev/null | \
+            $GW/api/gateway/v1/services/ 2>/dev/null | \
             python3 -c "
           import json, sys
           data = json.load(sys.stdin)
@@ -162,9 +163,19 @@ jobs:
               print(f\"  {svc.get('name','?'):20s} slug={svc.get('api_slug','?'):15s} port={svc.get('service_port','?')} https={svc.get('is_service_https','?')}\")
           " 2>&1 || echo "Could not query services API"
           echo ""
+          echo "=== HTTP ports ==="
+          curl -sk -u admin:$GATEWAY_PASSWORD \
+            $GW/api/gateway/v1/http_ports/ 2>/dev/null | \
+            python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          for p in data.get('results', []):
+              print(f\"  id={p.get('id','?')} name={p.get('name','?'):15s} number={p.get('number','?')} https={p.get('use_https','?')} is_api={p.get('is_api_port','?')}\")
+          " 2>&1 || echo "Could not query http_ports API"
+          echo ""
           echo "=== Service nodes ==="
           curl -sk -u admin:$GATEWAY_PASSWORD \
-            https://localhost:8443/api/gateway/v1/service_nodes/ 2>/dev/null | \
+            $GW/api/gateway/v1/service_nodes/ 2>/dev/null | \
             python3 -c "
           import json, sys
           data = json.load(sys.stdin)
@@ -174,13 +185,50 @@ jobs:
           echo ""
           echo "=== Service clusters ==="
           curl -sk -u admin:$GATEWAY_PASSWORD \
-            https://localhost:8443/api/gateway/v1/service_clusters/ 2>/dev/null | \
+            $GW/api/gateway/v1/service_clusters/ 2>/dev/null | \
             python3 -c "
           import json, sys
           data = json.load(sys.stdin)
           for cl in data.get('results', []):
               print(f\"  {cl.get('name','?'):20s} id={cl.get('id','?')}\")
           " 2>&1 || echo "Could not query service_clusters API"
+          echo ""
+          echo "=== Routes ==="
+          curl -sk -u admin:$GATEWAY_PASSWORD \
+            $GW/api/gateway/v1/routes/ 2>/dev/null | \
+            python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          for r in data.get('results', []):
+              print(f\"  {r.get('name','?'):30s} path={r.get('gateway_path','?'):20s} cluster={r.get('service_cluster','?')} port={r.get('service_port','?')}\")
+          " 2>&1 || echo "Could not query routes API"
+
+      - name: Debug — xDS LDS endpoint (direct POST like envoy)
+        if: always()
+        run: |
+          echo "=== POST to LDS endpoint (like envoy does) ==="
+          curl -sk -X POST \
+            -H "Content-Type: application/json" \
+            -d '{"node":{"id":"debug"},"resource_names":["*"]}' \
+            https://localhost:8000/v3/discovery:listeners 2>&1
+          echo ""
+          echo "=== POST to CDS endpoint (like envoy does) ==="
+          curl -sk -X POST \
+            -H "Content-Type: application/json" \
+            -d '{"node":{"id":"debug"},"resource_names":["*"]}' \
+            https://localhost:8000/v3/discovery:clusters 2>&1
+
+      - name: Debug — envoy container logs
+        if: always()
+        run: |
+          echo "=== Envoy proxy container logs (last 80 lines) ==="
+          podman logs --tail 80 aap_gw_proxy1 2>&1 || echo "No envoy container logs"
+
+      - name: Debug — gateway container logs (xDS related)
+        if: always()
+        run: |
+          echo "=== Gateway logs (xDS/envoy/listener related, last 100 lines) ==="
+          podman logs --tail 500 aap_gw_1 2>&1 | grep -iE "xds|envoy|listener|discovery|lds|cds|error|exception|traceback" | tail -100 || echo "No relevant gateway logs"
 
       - name: Debug — proxy routing test
         if: always()
