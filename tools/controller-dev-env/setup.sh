@@ -121,7 +121,11 @@ echo "Creating admin superuser..."
 podman exec "$CONTAINER_NAME" bash -c \
     "DJANGO_SUPERUSER_PASSWORD='$GATEWAY_PASSWORD' awx-manage createsuperuser --username '$GATEWAY_USERNAME' --email admin@localhost --noinput" 2>/dev/null || true
 
-# 10. Wait for uwsgi to be ready
+# 10. Create preload data (Default org, demo content)
+echo "Creating preload data..."
+podman exec "$CONTAINER_NAME" awx-manage create_preload_data 2>&1 | tail -3
+
+# 11. Wait for uwsgi to be ready
 echo "Waiting for AWX to be ready..."
 for i in $(seq 1 30); do
     if curl -sf "http://localhost:${AWX_PORT}/api/controller/v2/ping/" &>/dev/null; then
@@ -154,6 +158,68 @@ if [[ -n "$CTRL_SVC_ID" ]]; then
     echo "  Controller service updated (port=${AWX_PORT}, http)"
 else
     echo "  Error: Controller service not found after register-services"
+fi
+
+# 13. Set up resource sync between gateway and AWX
+echo "Setting up resource sync..."
+
+# Generate service secret on gateway
+SYNC_SECRET=$(podman exec "$GW_CONTAINER" aap-gateway-manage generate_service_secret controller 2>/dev/null)
+if [[ -n "$SYNC_SECRET" ]]; then
+    echo "  Service secret generated"
+
+    # Get AWX service_id
+    AWX_SERVICE_ID=$(podman exec "$CONTAINER_NAME" awx-manage shell -c \
+        "from ansible_base.resource_registry.models import service_id; print(service_id())" 2>/dev/null | tail -1)
+    echo "  AWX service_id: $AWX_SERVICE_ID"
+
+    # Set service_id on gateway's controller cluster
+    podman exec "$GW_CONTAINER" bash -c "echo \"
+from aap_gateway_api.models.service_cluster import ServiceCluster
+sc = ServiceCluster.objects.get(name='controller')
+sc.service_id = '$AWX_SERVICE_ID'
+sc.save()
+\" | aap-gateway-manage shell" >/dev/null 2>&1
+    echo "  Controller cluster service_id set"
+
+    # Append RESOURCE_SERVER config to AWX settings
+    podman exec "$CONTAINER_NAME" bash -c "cat >> /etc/tower/conf.d/settings.py << RSEOF
+
+RESOURCE_SERVER = {
+    \"URL\": \"https://gateway1:8000\",
+    \"SECRET_KEY\": \"${SYNC_SECRET}\",
+    \"VALIDATE_HTTPS\": False,
+}
+RSEOF"
+    echo "  RESOURCE_SERVER config written"
+
+    # Restart uwsgi to pick up new settings
+    podman exec "$CONTAINER_NAME" bash -c "kill -HUP \$(pgrep -f 'uwsgi.*master' | head -1)" 2>/dev/null || true
+    for i in $(seq 1 15); do
+        curl -sf "http://localhost:${AWX_PORT}/api/controller/v2/ping/" &>/dev/null && break
+        sleep 2
+    done
+    echo "  AWX restarted with RESOURCE_SERVER config"
+
+    # Run migrate_service_data on gateway (controller only succeeds, others expected to fail)
+    podman exec "$GW_CONTAINER" aap-gateway-manage migrate_service_data \
+        --username "$GATEWAY_USERNAME" -v1 2>&1 | tail -5 || true
+
+    # Force has_ran flag (galaxy/eda not running = expected failures)
+    podman exec "$GW_CONTAINER" bash -c "echo \"
+from aap_gateway_api.models import MigrateServiceDataHasRan
+obj = MigrateServiceDataHasRan.objects.first()
+if obj:
+    obj.has_ran = True
+    obj.save()
+\" | aap-gateway-manage shell" >/dev/null 2>&1
+    echo "  migrate_service_data completed"
+
+    # Sync resources from gateway to AWX
+    podman exec "$CONTAINER_NAME" awx-manage resource_sync 2>&1 | tail -5 || true
+    echo "  Resource sync completed"
+else
+    echo "  Warning: Could not generate service secret. Resource sync skipped."
 fi
 
 echo ""

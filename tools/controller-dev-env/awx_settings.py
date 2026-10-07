@@ -10,10 +10,15 @@ DATABASES = {
     }
 }
 CLUSTER_HOST_ID = "awx-test"
-BROKER_URL = "redis://localhost:6379"
+BROKER_URL = "memory://"
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+    }
+}
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
     }
 }
 SECRET_KEY = "awxsecretkey"
