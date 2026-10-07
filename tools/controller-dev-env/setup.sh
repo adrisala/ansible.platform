@@ -201,9 +201,10 @@ RSEOF"
     done
     echo "  AWX restarted with RESOURCE_SERVER config"
 
-    # Run migrate_service_data on gateway (controller only succeeds, others expected to fail)
+    # Run migrate_service_data on gateway (pulls AWX role definitions into gateway)
+    # --rerun needed because fresh installs mark migration as completed
     podman exec "$GW_CONTAINER" aap-gateway-manage migrate_service_data \
-        --username "$GATEWAY_USERNAME" -v1 2>&1 | tail -5 || true
+        --username "$GATEWAY_USERNAME" --rerun -v1 2>&1 | tail -5 || true
 
     # Force has_ran flag (galaxy/eda not running = expected failures)
     podman exec "$GW_CONTAINER" bash -c "echo \"
