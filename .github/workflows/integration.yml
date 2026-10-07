@@ -108,6 +108,12 @@ jobs:
             echo "WARNING: envoy listeners never appeared after 200s"
           fi
 
+      - name: Sync resources (requires envoy proxy to be ready)
+        run: |
+          AAP_GATEWAY_DIR=${{ github.workspace }}/aap-gateway \
+            ./tools/controller-dev-env/setup.sh sync
+        working-directory: ansible-platform
+
       - name: Debug — container status
         if: always()
         run: |

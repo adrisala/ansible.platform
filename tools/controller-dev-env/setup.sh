@@ -54,6 +54,33 @@ if [[ "${1:-}" == "teardown" ]]; then
     exit 0
 fi
 
+sync_resources() {
+    echo "=== Syncing resources between gateway and controller ==="
+    # migrate_service_data pulls AWX role definitions into gateway
+    # --rerun needed because fresh installs mark migration as completed
+    podman exec "$GW_CONTAINER" aap-gateway-manage migrate_service_data \
+        --username "$GATEWAY_USERNAME" --rerun -v1 2>&1 | tail -10 || true
+
+    # Force has_ran flag (galaxy/eda not running = expected failures)
+    podman exec "$GW_CONTAINER" bash -c "echo \"
+from aap_gateway_api.models import MigrateServiceDataHasRan
+obj = MigrateServiceDataHasRan.objects.first()
+if obj:
+    obj.has_ran = True
+    obj.save()
+\" | aap-gateway-manage shell" >/dev/null 2>&1
+    echo "  migrate_service_data completed"
+
+    # Sync resources from gateway to AWX
+    podman exec "$CONTAINER_NAME" awx-manage resource_sync 2>&1 | tail -5 || true
+    echo "  Resource sync completed"
+}
+
+if [[ "${1:-}" == "sync" ]]; then
+    sync_resources
+    exit 0
+fi
+
 echo "=== Setting up AWX controller alongside gateway ==="
 
 # 1. Check gateway is running
@@ -201,24 +228,8 @@ RSEOF"
     done
     echo "  AWX restarted with RESOURCE_SERVER config"
 
-    # Run migrate_service_data on gateway (pulls AWX role definitions into gateway)
-    # --rerun needed because fresh installs mark migration as completed
-    podman exec "$GW_CONTAINER" aap-gateway-manage migrate_service_data \
-        --username "$GATEWAY_USERNAME" --rerun -v1 2>&1 | tail -5 || true
-
-    # Force has_ran flag (galaxy/eda not running = expected failures)
-    podman exec "$GW_CONTAINER" bash -c "echo \"
-from aap_gateway_api.models import MigrateServiceDataHasRan
-obj = MigrateServiceDataHasRan.objects.first()
-if obj:
-    obj.has_ran = True
-    obj.save()
-\" | aap-gateway-manage shell" >/dev/null 2>&1
-    echo "  migrate_service_data completed"
-
-    # Sync resources from gateway to AWX
-    podman exec "$CONTAINER_NAME" awx-manage resource_sync 2>&1 | tail -5 || true
-    echo "  Resource sync completed"
+    echo "  Note: migrate_service_data and resource_sync require envoy proxy."
+    echo "  Run 'setup.sh sync' after envoy listeners are ready."
 else
     echo "  Warning: Could not generate service secret. Resource sync skipped."
 fi
