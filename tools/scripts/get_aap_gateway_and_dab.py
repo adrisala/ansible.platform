@@ -32,7 +32,8 @@ def _git_clone(repo_url, branch, local_destination):
     :param local_destination: The local directory where the repo will be cloned.
     """
     print(f"Checking out {branch} branch of {repo_url} into {GH_WORKSPACE}/{local_destination}")
-    os.system(f"git clone {repo_url} -b {branch} --depth=1 -c http.extraheader='AUTHORIZATION: basic {_git_auth_header()}' {GH_WORKSPACE}/{local_destination}")
+    auth_args = f"-c http.extraheader='AUTHORIZATION: basic {_git_auth_header()}'" if TOKEN else ""
+    os.system(f"git clone {repo_url} -b {branch} --depth=1 {auth_args} {GH_WORKSPACE}/{local_destination}")
 
 
 def _get_requires(pr_body, target):
@@ -67,7 +68,7 @@ def _checkout_aap_gateway(pr_body):
        Return the body of the specified Pull Request, if any.
     :param pr_body: The ansible.platform PR body.
     """
-    repo_url = "https://github.com/ansible-automation-platform/aap-gateway"
+    repo_url = "https://github.com/ansible/jewel"
     branch = "devel"
     aap_gateway_pr_body = ""
 

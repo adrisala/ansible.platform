@@ -70,6 +70,15 @@ jobs:
             -e gateway_vars=$(readlink -f container-startup.yml)
         working-directory: aap-gateway
 
+      - name: Start controller service
+        run: |
+          AAP_GATEWAY_DIR=${{ github.workspace }}/aap-gateway \
+            ./tools/controller-dev-env/setup.sh
+        working-directory: ansible-platform
+
+      - name: Wait for envoy xDS refresh
+        run: sleep 65
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -98,6 +107,10 @@ jobs:
       - name: Dump the container logs on failure
         run: podman-compose -f tools/generated/compose.yml logs
         working-directory: aap-gateway
+        if: failure()
+
+      - name: Dump controller logs on failure
+        run: podman logs awx_controller 2>&1 || true
         if: failure()
 
   coverage_test:
