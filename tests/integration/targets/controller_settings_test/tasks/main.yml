@@ -3,6 +3,10 @@
 # Controller settings are global, so this test toggles a non-secret boolean and
 # restores its original value in an always block.
 
+- name: Skip controller_settings test for non-local modes (parallel runs race on shared state)
+  ansible.builtin.meta: end_host
+  when: connection_mode | default('local') != 'local'
+
 - name: Read current Controller setting
   ansible.builtin.uri:
     url: "{{ gateway_hostname | regex_replace('/$', '') }}/api/controller/v2/settings/all/"

@@ -1,4 +1,8 @@
 ---
+- name: Skip feature_flags test for non-local modes (parallel runs race on shared state)
+  ansible.builtin.meta: end_host
+  when: connection_mode | default('local') != 'local'
+
 - name: Get current settings to check if runtime feature flags are enabled
   ansible.builtin.set_fact:
     all_settings: "{{ lookup('ansible.platform.gateway_api', 'settings', **connection_info) }}"
