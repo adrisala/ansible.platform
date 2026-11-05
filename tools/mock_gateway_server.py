@@ -76,6 +76,7 @@ class GenericResource:
         post_only_fields: Optional[Dict[str, Callable[[], Any]]] = None,
         sort_list_fields: Optional[List[str]] = None,
         service: str = "gateway",
+        auto_fields: Optional[Dict[str, Any]] = None,
     ):
         self.lock = threading.Lock()
         self.resource_name = resource_name
@@ -90,6 +91,10 @@ class GenericResource:
         # the same ordering the real API would return, catching order-sensitivity
         # bugs in _should_update() before they reach a real AAP instance.
         self.sort_list_fields: List[str] = sort_list_fields or []
+        # Auto-populated fields: default values that the real API always includes
+        # in responses (e.g. import_state for EDA projects).  Applied on create
+        # and seed as defaults — the caller can override them in the payload.
+        self.auto_fields: Dict[str, Any] = auto_fields or {}
         self._next_id = start_id
         self._items: Dict[int, Dict[str, Any]] = {}
         self._associations: Dict[int, Dict[str, set]] = {}
@@ -115,6 +120,9 @@ class GenericResource:
                 "url": f"/api/{self.service}/v{version}/{self.resource_name}/{item_id}/",
             }
             item.update({k: v for k, v in payload.items() if v is not None})
+            # Auto-fields: set defaults the real API always returns.
+            for field_name, default_value in self.auto_fields.items():
+                item.setdefault(field_name, default_value)
             # Normalise: sort list fields so the mock mirrors real Gateway ordering.
             self._normalize_item(item)
             self._items[item_id] = item
@@ -234,6 +242,9 @@ class GenericResource:
                 "url": f"/api/{self.service}/v{version}/{self.resource_name}/{item_id}/",
             }
             item.update(raw)
+            # Auto-fields: set defaults the real API always returns.
+            for field_name, default_value in self.auto_fields.items():
+                item.setdefault(field_name, default_value)
             self._items[item_id] = item
 
 
@@ -414,6 +425,12 @@ class Store:
                 patch_fields=["description", "metadata"] if endpoint == "credential-input-sources" else None,
                 service="eda",
             )
+
+        # EDA project responses include import_state so the eda_project action
+        # plugin's wait-for-import resolves immediately in mock tests.
+        eda_projects = self._resources.get(("eda", "projects"))
+        if eda_projects is not None:
+            eda_projects.auto_fields = {"import_state": "completed"}
 
     def resource(self, service: str, name: str) -> Optional[GenericResource]:
         return self._resources.get((service, name))

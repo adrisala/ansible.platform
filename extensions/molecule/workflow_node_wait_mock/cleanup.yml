@@ -1,0 +1,9 @@
+---
+- name: Cleanup — workflow_node_wait (no resources to remove)
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: No cleanup needed (workflow_node_wait is read-only)
+      ansible.builtin.debug:
+        msg: "workflow_node_wait uses server-side fixtures; nothing to clean up."
+...

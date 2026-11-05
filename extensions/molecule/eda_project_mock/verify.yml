@@ -1,0 +1,68 @@
+---
+- name: Verify — eda_project cleanup complete
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    gateway_hostname: "http://127.0.0.1:8000"
+    gateway_username: "mock"
+    gateway_password: "testpass"
+    gateway_validate_certs: false
+  tasks:
+    - name: Ensure local-mode test project is absent after converge
+      ansible.platform.eda_project:
+        name: "molecule-mock-eda-project-local"
+        state: absent
+        gateway_hostname: "{{ gateway_hostname }}"
+        gateway_username: "{{ gateway_username }}"
+        gateway_password: "{{ gateway_password }}"
+        gateway_validate_certs: "{{ gateway_validate_certs }}"
+      register: verify_local
+      vars:
+        ansible_connection: local
+
+    - name: Assert local-mode project is already absent
+      ansible.builtin.assert:
+        that: verify_local is not changed
+        fail_msg: "Verify: local-mode EDA project should already be absent after converge."
+      vars:
+        ansible_connection: local
+
+    - name: Ensure http-direct test project is absent after converge
+      ansible.platform.eda_project:
+        name: "molecule-mock-eda-project-hd"
+        state: absent
+        gateway_hostname: "{{ gateway_hostname }}"
+        gateway_username: "{{ gateway_username }}"
+        gateway_password: "{{ gateway_password }}"
+        gateway_validate_certs: "{{ gateway_validate_certs }}"
+      register: verify_hd
+      vars:
+        ansible_connection: local
+
+    - name: Assert http-direct project is already absent
+      ansible.builtin.assert:
+        that: verify_hd is not changed
+        fail_msg: "Verify: http-direct EDA project should already be absent after converge."
+      vars:
+        ansible_connection: local
+
+    - name: Ensure http-persistent test project is absent after converge
+      ansible.platform.eda_project:
+        name: "molecule-mock-eda-project-hp"
+        state: absent
+        gateway_hostname: "{{ gateway_hostname }}"
+        gateway_username: "{{ gateway_username }}"
+        gateway_password: "{{ gateway_password }}"
+        gateway_validate_certs: "{{ gateway_validate_certs }}"
+      register: verify_hp
+      vars:
+        ansible_connection: local
+
+    - name: Assert http-persistent project is already absent
+      ansible.builtin.assert:
+        that: verify_hp is not changed
+        fail_msg: "Verify: http-persistent EDA project should already be absent after converge."
+      vars:
+        ansible_connection: local
+...
