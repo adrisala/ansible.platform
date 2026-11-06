@@ -1,0 +1,31 @@
+---
+- name: Verify — controller_meta returns consistent metadata
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    gateway_hostname: "http://127.0.0.1:8000"
+    gateway_username: "mock"
+    gateway_password: "testpass"
+    gateway_validate_certs: false
+  tasks:
+    - name: Get collection metadata in verify phase
+      ansible.platform.controller_meta:
+        gateway_hostname: "{{ gateway_hostname }}"
+        gateway_username: "{{ gateway_username }}"
+        gateway_password: "{{ gateway_password }}"
+        gateway_validate_certs: "{{ gateway_validate_certs }}"
+      register: verify_meta
+      vars:
+        ansible_connection: local
+
+    - name: Assert metadata is still correct
+      ansible.builtin.assert:
+        that:
+          - verify_meta is not changed
+          - verify_meta.prefix == "ansible.platform"
+          - verify_meta.version is string
+        fail_msg: "Verify: controller_meta should return consistent metadata."
+      vars:
+        ansible_connection: local
+...

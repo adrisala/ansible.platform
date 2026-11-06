@@ -16,6 +16,7 @@ provisioner:
   playbooks:
     converge: converge.yml
     verify: verify.yml
+    cleanup: cleanup.yml
   config_options:
     defaults:
       collections_path: "${MOLECULE_SCENARIO_DIRECTORY}/../../../../../../"
@@ -25,4 +26,5 @@ scenario:
   test_sequence:
     - converge
     - verify
+    - cleanup
 ...

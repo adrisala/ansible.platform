@@ -1,0 +1,141 @@
+---
+- name: Ensure mock Gateway is reachable
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    gateway_hostname: "http://127.0.0.1:8000"
+  tasks:
+    - name: Wait for mock Gateway health endpoint
+      ansible.builtin.uri:
+        url: "{{ gateway_hostname }}/health"
+        method: GET
+        status_code: 200
+      register: health
+      retries: 12
+      delay: 5
+      until: health.status == 200
+      vars:
+        ansible_connection: local
+
+    - name: Ensure /tmp/ap directory exists
+      ansible.builtin.file:
+        path: /tmp/ap
+        state: directory
+        mode: "0755"
+      vars:
+        ansible_connection: local
+
+    - name: Create manager survive flag (Molecule keeps manager alive across phases)
+      ansible.builtin.file:
+        path: /tmp/ap/.survive
+        state: touch
+        mode: "0600"
+      vars:
+        ansible_connection: local
+
+- name: Converge — controller_meta (mock, connection local)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    gateway_hostname: "http://127.0.0.1:8000"
+    gateway_username: "mock"
+    gateway_password: "testpass"
+    gateway_validate_certs: false
+  tasks:
+    - name: Get collection metadata (connection local)
+      ansible.platform.controller_meta:
+        gateway_hostname: "{{ gateway_hostname }}"
+        gateway_username: "{{ gateway_username }}"
+        gateway_password: "{{ gateway_password }}"
+        gateway_validate_certs: "{{ gateway_validate_certs }}"
+      register: meta_local
+      vars:
+        ansible_connection: local
+
+    - name: Assert metadata is correct (connection local)
+      ansible.builtin.assert:
+        that:
+          - meta_local is not changed
+          - meta_local.namespace == "ansible"
+          - meta_local.name == "platform"
+          - meta_local.prefix == "ansible.platform"
+          - meta_local.version is string
+          - meta_local.version | length > 0
+        fail_msg: "controller_meta (local) returned unexpected metadata: {{ meta_local }}"
+      vars:
+        ansible_connection: local
+
+    - name: Get collection metadata again (idempotency, connection local)
+      ansible.platform.controller_meta:
+        gateway_hostname: "{{ gateway_hostname }}"
+        gateway_username: "{{ gateway_username }}"
+        gateway_password: "{{ gateway_password }}"
+        gateway_validate_certs: "{{ gateway_validate_certs }}"
+      register: meta_local_repeat
+      vars:
+        ansible_connection: local
+
+    - name: Assert repeated call is consistent (connection local)
+      ansible.builtin.assert:
+        that:
+          - meta_local_repeat is not changed
+          - meta_local_repeat.prefix == meta_local.prefix
+          - meta_local_repeat.version == meta_local.version
+        fail_msg: "controller_meta (local) should return identical metadata on repeat."
+      vars:
+        ansible_connection: local
+
+- name: Converge — controller_meta (mock, http direct)
+  hosts: localhost
+  connection: ansible.platform.http
+  gather_facts: false
+  vars:
+    gateway_hostname: "http://127.0.0.1:8000"
+    gateway_username: "mock"
+    gateway_password: "testpass"
+    gateway_validate_certs: false
+    ansible_platform_use_persistent_connection: false
+  tasks:
+    - name: Get collection metadata (http direct)
+      ansible.platform.controller_meta:
+      register: meta_http_direct
+
+    - name: Assert metadata is correct (http direct)
+      ansible.builtin.assert:
+        that:
+          - meta_http_direct is not changed
+          - meta_http_direct.namespace == "ansible"
+          - meta_http_direct.name == "platform"
+          - meta_http_direct.prefix == "ansible.platform"
+          - meta_http_direct.version is string
+          - meta_http_direct.version | length > 0
+        fail_msg: "controller_meta (http direct) returned unexpected metadata: {{ meta_http_direct }}"
+
+- name: Converge — controller_meta (mock, http persistent)
+  hosts: localhost
+  connection: ansible.platform.http
+  gather_facts: false
+  vars:
+    gateway_hostname: "http://127.0.0.1:8000"
+    gateway_username: "mock"
+    gateway_password: "testpass"
+    gateway_validate_certs: false
+    ansible_platform_use_persistent_connection: true
+  tasks:
+    - name: Get collection metadata (http persistent)
+      ansible.platform.controller_meta:
+      register: meta_http_persistent
+
+    - name: Assert metadata is correct (http persistent)
+      ansible.builtin.assert:
+        that:
+          - meta_http_persistent is not changed
+          - meta_http_persistent.namespace == "ansible"
+          - meta_http_persistent.name == "platform"
+          - meta_http_persistent.prefix == "ansible.platform"
+          - meta_http_persistent.version is string
+          - meta_http_persistent.version | length > 0
+        fail_msg: "controller_meta (http persistent) returned unexpected metadata: {{ meta_http_persistent }}"
+...

@@ -1,0 +1,12 @@
+---
+- name: Cleanup — controller_meta (no resources to remove)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: No cleanup needed (controller_meta is read-only)
+      ansible.builtin.debug:
+        msg: "controller_meta creates no resources; nothing to clean up."
+      vars:
+        ansible_connection: local
+...

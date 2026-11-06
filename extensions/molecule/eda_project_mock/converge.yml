@@ -1,0 +1,267 @@
+---
+- name: Ensure mock Gateway is reachable
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    gateway_hostname: "http://127.0.0.1:8000"
+  tasks:
+    - name: Wait for mock Gateway health endpoint
+      ansible.builtin.uri:
+        url: "{{ gateway_hostname }}/health"
+        method: GET
+        status_code: 200
+      register: health
+      retries: 12
+      delay: 5
+      until: health.status == 200
+      vars:
+        ansible_connection: local
+
+    - name: Ensure /tmp/ap directory exists
+      ansible.builtin.file:
+        path: /tmp/ap
+        state: directory
+        mode: "0755"
+      vars:
+        ansible_connection: local
+
+    - name: Create manager survive flag (Molecule keeps manager alive across phases)
+      ansible.builtin.file:
+        path: /tmp/ap/.survive
+        state: touch
+        mode: "0600"
+      vars:
+        ansible_connection: local
+
+- name: Converge — eda_project (mock, connection local)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    gateway_hostname: "http://127.0.0.1:8000"
+    gateway_username: "mock"
+    gateway_password: "testpass"
+    gateway_validate_certs: false
+    project_name: "molecule-mock-eda-project-local"
+  tasks:
+    - name: Create EDA project (connection local)
+      ansible.platform.eda_project:
+        name: "{{ project_name }}"
+        description: "Molecule mock EDA project"
+        url: "https://github.com/ansible/ansible-rulebook.git"
+        organization_name: "Default"
+        state: present
+        gateway_hostname: "{{ gateway_hostname }}"
+        gateway_username: "{{ gateway_username }}"
+        gateway_password: "{{ gateway_password }}"
+        gateway_validate_certs: "{{ gateway_validate_certs }}"
+      register: create_result_local
+      vars:
+        ansible_connection: local
+
+    - name: Assert create changed (connection local)
+      ansible.builtin.assert:
+        that:
+          - create_result_local is changed
+          - create_result_local.eda_project.id is defined
+        fail_msg: "Create (local) should report changed. Got: {{ create_result_local }}"
+      vars:
+        ansible_connection: local
+
+    - name: Re-create same EDA project (idempotency, connection local)
+      ansible.platform.eda_project:
+        name: "{{ project_name }}"
+        description: "Molecule mock EDA project"
+        url: "https://github.com/ansible/ansible-rulebook.git"
+        organization_name: "Default"
+        state: present
+        gateway_hostname: "{{ gateway_hostname }}"
+        gateway_username: "{{ gateway_username }}"
+        gateway_password: "{{ gateway_password }}"
+        gateway_validate_certs: "{{ gateway_validate_certs }}"
+      register: idempotent_result_local
+      vars:
+        ansible_connection: local
+
+    - name: Assert re-create is idempotent (connection local)
+      ansible.builtin.assert:
+        that:
+          - idempotent_result_local is not changed
+        fail_msg: "Re-create (local) should not report changed."
+      vars:
+        ansible_connection: local
+
+    - name: Update EDA project description (connection local)
+      ansible.platform.eda_project:
+        name: "{{ project_name }}"
+        description: "Molecule mock EDA project (updated)"
+        url: "https://github.com/ansible/ansible-rulebook.git"
+        organization_name: "Default"
+        state: present
+        gateway_hostname: "{{ gateway_hostname }}"
+        gateway_username: "{{ gateway_username }}"
+        gateway_password: "{{ gateway_password }}"
+        gateway_validate_certs: "{{ gateway_validate_certs }}"
+      register: update_result_local
+      vars:
+        ansible_connection: local
+
+    - name: Assert update changed (connection local)
+      ansible.builtin.assert:
+        that:
+          - update_result_local is changed
+        fail_msg: "Update (local) should report changed."
+      vars:
+        ansible_connection: local
+
+    - name: Delete EDA project (connection local)
+      ansible.platform.eda_project:
+        name: "{{ project_name }}"
+        state: absent
+        gateway_hostname: "{{ gateway_hostname }}"
+        gateway_username: "{{ gateway_username }}"
+        gateway_password: "{{ gateway_password }}"
+        gateway_validate_certs: "{{ gateway_validate_certs }}"
+      register: delete_result_local
+      vars:
+        ansible_connection: local
+
+    - name: Assert delete changed (connection local)
+      ansible.builtin.assert:
+        that:
+          - delete_result_local is changed
+        fail_msg: "Delete (local) should report changed."
+      vars:
+        ansible_connection: local
+
+    - name: Delete already absent EDA project (connection local)
+      ansible.platform.eda_project:
+        name: "{{ project_name }}"
+        state: absent
+        gateway_hostname: "{{ gateway_hostname }}"
+        gateway_username: "{{ gateway_username }}"
+        gateway_password: "{{ gateway_password }}"
+        gateway_validate_certs: "{{ gateway_validate_certs }}"
+      register: delete_absent_result_local
+      vars:
+        ansible_connection: local
+
+    - name: Assert delete absent is no-op (connection local)
+      ansible.builtin.assert:
+        that:
+          - delete_absent_result_local is not changed
+        fail_msg: "Delete absent (local) should not report changed."
+      vars:
+        ansible_connection: local
+
+- name: Converge — eda_project (mock, http direct)
+  hosts: localhost
+  connection: ansible.platform.http
+  gather_facts: false
+  vars:
+    gateway_hostname: "http://127.0.0.1:8000"
+    gateway_username: "mock"
+    gateway_password: "testpass"
+    gateway_validate_certs: false
+    ansible_platform_use_persistent_connection: false
+    project_name: "molecule-mock-eda-project-hd"
+  tasks:
+    - name: Create EDA project (http direct)
+      ansible.platform.eda_project:
+        name: "{{ project_name }}"
+        description: "HTTP direct test project"
+        url: "https://github.com/ansible/ansible-rulebook.git"
+        organization_name: "Default"
+        state: present
+      register: create_result_http_direct
+
+    - name: Assert create changed (http direct)
+      ansible.builtin.assert:
+        that:
+          - create_result_http_direct is changed
+          - create_result_http_direct.eda_project.id is defined
+        fail_msg: "Create (http direct) should report changed."
+
+    - name: Re-create same EDA project (idempotency, http direct)
+      ansible.platform.eda_project:
+        name: "{{ project_name }}"
+        description: "HTTP direct test project"
+        url: "https://github.com/ansible/ansible-rulebook.git"
+        organization_name: "Default"
+        state: present
+      register: idempotent_result_http_direct
+
+    - name: Assert re-create is idempotent (http direct)
+      ansible.builtin.assert:
+        that:
+          - idempotent_result_http_direct is not changed
+        fail_msg: "Re-create (http direct) should not report changed."
+
+    - name: Delete EDA project (http direct)
+      ansible.platform.eda_project:
+        name: "{{ project_name }}"
+        state: absent
+      register: delete_result_http_direct
+
+    - name: Assert delete changed (http direct)
+      ansible.builtin.assert:
+        that:
+          - delete_result_http_direct is changed
+        fail_msg: "Delete (http direct) should report changed."
+
+- name: Converge — eda_project (mock, http persistent)
+  hosts: localhost
+  connection: ansible.platform.http
+  gather_facts: false
+  vars:
+    gateway_hostname: "http://127.0.0.1:8000"
+    gateway_username: "mock"
+    gateway_password: "testpass"
+    gateway_validate_certs: false
+    ansible_platform_use_persistent_connection: true
+    project_name: "molecule-mock-eda-project-hp"
+  tasks:
+    - name: Create EDA project (http persistent)
+      ansible.platform.eda_project:
+        name: "{{ project_name }}"
+        description: "HTTP persistent test project"
+        url: "https://github.com/ansible/ansible-rulebook.git"
+        organization_name: "Default"
+        state: present
+      register: create_result_http_persistent
+
+    - name: Assert create changed (http persistent)
+      ansible.builtin.assert:
+        that:
+          - create_result_http_persistent is changed
+          - create_result_http_persistent.eda_project.id is defined
+        fail_msg: "Create (http persistent) should report changed."
+
+    - name: Re-create same EDA project (idempotency, http persistent)
+      ansible.platform.eda_project:
+        name: "{{ project_name }}"
+        description: "HTTP persistent test project"
+        url: "https://github.com/ansible/ansible-rulebook.git"
+        organization_name: "Default"
+        state: present
+      register: idempotent_result_http_persistent
+
+    - name: Assert re-create is idempotent (http persistent)
+      ansible.builtin.assert:
+        that:
+          - idempotent_result_http_persistent is not changed
+        fail_msg: "Re-create (http persistent) should not report changed."
+
+    - name: Delete EDA project (http persistent)
+      ansible.platform.eda_project:
+        name: "{{ project_name }}"
+        state: absent
+      register: delete_result_http_persistent
+
+    - name: Assert delete changed (http persistent)
+      ansible.builtin.assert:
+        that:
+          - delete_result_http_persistent is changed
+        fail_msg: "Delete (http persistent) should report changed."
+...
