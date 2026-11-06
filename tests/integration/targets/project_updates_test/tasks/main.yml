@@ -1,4 +1,8 @@
 ---
+- name: Skip project_updates test for non-local modes (concurrent syncs on shared Demo Project)
+  ansible.builtin.meta: end_host
+  when: connection_mode | default('local') != 'local'
+
 - name: Sync the Demo Project and wait for completion
   ansible.platform.project_update:
     name: "Demo Project"
