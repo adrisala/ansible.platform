@@ -1,0 +1,17 @@
+---
+# Event stream replaces source index 0 at activation time.
+# Activation extra_vars must set remediate_jt_name + remediate_org_name.
+- name: Remediate on webhook alert
+  hosts: all
+  sources:
+    - name: alert_webhook
+      ansible.eda.webhook:
+        host: 0.0.0.0
+        port: 5000
+  rules:
+    - name: Launch remediation job template
+      condition: event.payload.alert == "e2e-remediation" or event.alert == "e2e-remediation"
+      action:
+        run_job_template:
+          name: "{{ remediate_jt_name }}"
+          organization: "{{ remediate_org_name }}"
